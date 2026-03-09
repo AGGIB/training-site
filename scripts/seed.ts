@@ -17,62 +17,60 @@ async function main() {
   const outputPath = path.resolve(process.cwd(), "data/questions.json");
   await fs.writeFile(outputPath, JSON.stringify(variants, null, 2), "utf-8");
 
-  await prisma.$transaction(async (tx) => {
-    for (const variant of variants) {
-      await tx.variant.upsert({
-        where: { id: variant.variantNumber },
+  for (const variant of variants) {
+    await prisma.variant.upsert({
+      where: { id: variant.variantNumber },
+      create: {
+        id: variant.variantNumber,
+        title: variant.title
+      },
+      update: {
+        title: variant.title
+      }
+    });
+
+    for (const question of variant.questions) {
+      const questionRecord = await prisma.question.upsert({
+        where: {
+          variantId_order: {
+            variantId: variant.variantNumber,
+            order: question.order
+          }
+        },
         create: {
-          id: variant.variantNumber,
-          title: variant.title
+          variantId: variant.variantNumber,
+          order: question.order,
+          text: question.text
         },
         update: {
-          title: variant.title
+          text: question.text
         }
       });
 
-      for (const question of variant.questions) {
-        const questionRecord = await tx.question.upsert({
+      for (const option of question.options) {
+        await prisma.option.upsert({
           where: {
-            variantId_order: {
-              variantId: variant.variantNumber,
-              order: question.order
+            questionId_label: {
+              questionId: questionRecord.id,
+              label: option.label
             }
           },
           create: {
-            variantId: variant.variantNumber,
-            order: question.order,
-            text: question.text
+            questionId: questionRecord.id,
+            label: option.label,
+            text: option.text,
+            isCorrect: option.isCorrect,
+            order: option.order
           },
           update: {
-            text: question.text
+            text: option.text,
+            isCorrect: option.isCorrect,
+            order: option.order
           }
         });
-
-        for (const option of question.options) {
-          await tx.option.upsert({
-            where: {
-              questionId_label: {
-                questionId: questionRecord.id,
-                label: option.label
-              }
-            },
-            create: {
-              questionId: questionRecord.id,
-              label: option.label,
-              text: option.text,
-              isCorrect: option.isCorrect,
-              order: option.order
-            },
-            update: {
-              text: option.text,
-              isCorrect: option.isCorrect,
-              order: option.order
-            }
-          });
-        }
       }
     }
-  });
+  }
 
   const summary = variants
     .map((variant) => `#${variant.variantNumber}: ${variant.questions.length}`)
