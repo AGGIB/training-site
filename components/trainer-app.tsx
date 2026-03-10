@@ -69,6 +69,22 @@ type QuizSession = {
   >;
 };
 
+type MistakeSession = {
+  questions: MistakeQuestion[];
+  index: number;
+  answers: Record<
+    string,
+    {
+      selectedOptionId: string;
+      isCorrect: boolean;
+      correctOptionLabel: string;
+      streak: number;
+      isActive: boolean;
+    }
+  >;
+  startedAtMs: number;
+};
+
 type MistakeQuestion = {
   questionId: string;
   text: string;
@@ -114,15 +130,14 @@ export function TrainerApp() {
   const [quizBusy, setQuizBusy] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
 
-  const [mistakeQuestions, setMistakeQuestions] = useState<MistakeQuestion[]>([]);
-  const [mistakeBusy, setMistakeBusy] = useState(false);
-  const [mistakeFeedback, setMistakeFeedback] = useState<{
-    selectedOptionId: string;
-    isCorrect: boolean;
-    correctOptionLabel: string;
-    streak: number;
-    isActive: boolean;
+  const [mistakeSession, setMistakeSession] = useState<MistakeSession | null>(null);
+  const [mistakeSummary, setMistakeSummary] = useState<{
+    totalQuestions: number;
+    answeredCount: number;
+    correctCount: number;
+    resolvedCount: number;
   } | null>(null);
+  const [mistakeBusy, setMistakeBusy] = useState(false);
 
   const t = dictionaries[lang];
 
@@ -133,6 +148,14 @@ export function TrainerApp() {
 
     return quizSession.questions[quizSession.index] ?? null;
   }, [quizSession]);
+
+  const currentMistakeQuestion = useMemo(() => {
+    if (!mistakeSession) {
+      return null;
+    }
+
+    return mistakeSession.questions[mistakeSession.index] ?? null;
+  }, [mistakeSession]);
 
   useEffect(() => {
     const savedLang = localStorage.getItem(LANG_STORAGE_KEY);
@@ -226,8 +249,8 @@ export function TrainerApp() {
     setMe(null);
     setQuizSession(null);
     setQuizSummary(null);
-    setMistakeQuestions([]);
-    setMistakeFeedback(null);
+    setMistakeSession(null);
+    setMistakeSummary(null);
   }
 
   async function startQuiz() {
@@ -378,7 +401,6 @@ export function TrainerApp() {
       setQuizSummary(payload);
       setQuizSession(null);
       await loadMe();
-      await refreshMistakes();
     } catch (error) {
       console.error(error);
       alert((error as Error).message);
@@ -387,32 +409,52 @@ export function TrainerApp() {
     }
   }
 
-  async function refreshMistakes() {
-    setMistakeBusy(true);
-    try {
-      const response = await fetch("/api/mistakes");
-      if (!response.ok) {
-        throw new Error("Failed to load mistakes");
-      }
-      const payload = (await response.json()) as {
-        count: number;
-        questions: MistakeQuestion[];
-      };
+  async function loadMistakeQueue(): Promise<MistakeQuestion[]> {
+    const response = await fetch("/api/mistakes");
+    if (!response.ok) {
+      throw new Error("Failed to load mistakes");
+    }
 
-      setMistakeQuestions(payload.questions);
-      setMistakeFeedback(null);
+    const payload = (await response.json()) as {
+      count: number;
+      questions: MistakeQuestion[];
+    };
+
+    return payload.questions;
+  }
+
+  async function startMistakeSession() {
+    setMistakeBusy(true);
+    setMistakeSummary(null);
+
+    try {
+      const questions = await loadMistakeQueue();
+      if (questions.length === 0) {
+        alert(t.noMistakes);
+        return;
+      }
+
+      setMistakeSession({
+        questions,
+        index: 0,
+        answers: {},
+        startedAtMs: Date.now()
+      });
     } catch (error) {
       console.error(error);
-      setMistakeQuestions([]);
-      setMistakeFeedback(null);
+      alert((error as Error).message);
     } finally {
       setMistakeBusy(false);
     }
   }
 
   async function answerMistake(optionId: string) {
-    const current = mistakeQuestions[0];
-    if (!current || mistakeFeedback) {
+    if (!mistakeSession || !currentMistakeQuestion) {
+      return;
+    }
+
+    const already = mistakeSession.answers[currentMistakeQuestion.questionId];
+    if (already) {
       return;
     }
 
@@ -425,7 +467,7 @@ export function TrainerApp() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          questionId: current.questionId,
+          questionId: currentMistakeQuestion.questionId,
           optionId
         })
       });
@@ -442,12 +484,24 @@ export function TrainerApp() {
         isActive: boolean;
       };
 
-      setMistakeFeedback({
-        selectedOptionId: optionId,
-        isCorrect: payload.isCorrect,
-        correctOptionLabel: payload.correctOptionLabel,
-        streak: payload.streak,
-        isActive: payload.isActive
+      setMistakeSession((prev) => {
+        if (!prev || !currentMistakeQuestion) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          answers: {
+            ...prev.answers,
+            [currentMistakeQuestion.questionId]: {
+              selectedOptionId: optionId,
+              isCorrect: payload.isCorrect,
+              correctOptionLabel: payload.correctOptionLabel,
+              streak: payload.streak,
+              isActive: payload.isActive
+            }
+          }
+        };
       });
     } catch (error) {
       console.error(error);
@@ -457,13 +511,44 @@ export function TrainerApp() {
     }
   }
 
-  async function nextMistakeQuestion() {
-    await refreshMistakes();
+  function goNextMistakeQuestion() {
+    setMistakeSession((prev) => {
+      if (!prev) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        index: Math.min(prev.index + 1, prev.questions.length - 1)
+      };
+    });
+  }
+
+  async function finishMistakeSession() {
+    if (!mistakeSession) {
+      return;
+    }
+
+    const answers = Object.values(mistakeSession.answers);
+    const answeredCount = answers.length;
+    const correctCount = answers.filter((answer) => answer.isCorrect).length;
+    const resolvedCount = answers.filter((answer) => !answer.isActive).length;
+
+    setMistakeSummary({
+      totalQuestions: mistakeSession.questions.length,
+      answeredCount,
+      correctCount,
+      resolvedCount
+    });
+    setMistakeSession(null);
     await loadMe();
   }
 
   const quizAnsweredCount = quizSession
     ? Object.keys(quizSession.answers).length
+    : 0;
+  const mistakeAnsweredCount = mistakeSession
+    ? Object.keys(mistakeSession.answers).length
     : 0;
 
   if (loading) {
@@ -658,7 +743,7 @@ export function TrainerApp() {
         </section>
       ) : null}
 
-      {!quizSession && quizSummary ? (
+      {!quizSession && !mistakeSession && quizSummary ? (
         <section className="card stack">
           <h2>{t.completed}</h2>
           <p>
@@ -673,7 +758,111 @@ export function TrainerApp() {
         </section>
       ) : null}
 
-      {!quizSession && !quizSummary ? (
+      {!quizSession && !quizSummary && mistakeSession && currentMistakeQuestion ? (
+        <section className="card stack">
+          <div className="row-between">
+            <strong>
+              {t.mistakesWork}: {mistakeSession.index + 1}/{mistakeSession.questions.length}
+            </strong>
+            <span>
+              {t.totalAnswered}: {mistakeAnsweredCount}/{mistakeSession.questions.length}
+            </span>
+          </div>
+
+          <p>
+            {t.question}: V{currentMistakeQuestion.variantId} #{currentMistakeQuestion.order}
+          </p>
+          <p className="question-text">{currentMistakeQuestion.text}</p>
+
+          <div className="stack">
+            {currentMistakeQuestion.options.map((option) => {
+              const answer = mistakeSession.answers[currentMistakeQuestion.questionId];
+              const selected = answer?.selectedOptionId === option.id;
+              const correctChoice = answer?.correctOptionLabel === option.label;
+              const className = [
+                "option",
+                selected ? "selected" : "",
+                answer && correctChoice ? "correct" : "",
+                answer && selected && !answer.isCorrect ? "incorrect" : ""
+              ]
+                .filter(Boolean)
+                .join(" ");
+
+              return (
+                <button
+                  key={option.id}
+                  className={className}
+                  onClick={() => answerMistake(option.id)}
+                  type="button"
+                  disabled={mistakeBusy || Boolean(answer)}
+                >
+                  <span>{option.label})</span>
+                  <span>{option.text}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {mistakeSession.answers[currentMistakeQuestion.questionId] ? (
+            <p
+              className={
+                mistakeSession.answers[currentMistakeQuestion.questionId].isCorrect
+                  ? "ok-text"
+                  : "error-text"
+              }
+            >
+              {mistakeSession.answers[currentMistakeQuestion.questionId].isCorrect
+                ? `${t.correct}. ${t.streak}: ${mistakeSession.answers[currentMistakeQuestion.questionId].streak}/3`
+                : `${t.incorrect}. ${t.correctAnswer}: ${mistakeSession.answers[currentMistakeQuestion.questionId].correctOptionLabel}`}
+            </p>
+          ) : null}
+
+          <div className="row-between">
+            <button type="button" className="ghost" onClick={finishMistakeSession}>
+              {t.finishQuiz}
+            </button>
+            {mistakeSession.index < mistakeSession.questions.length - 1 ? (
+              <button
+                type="button"
+                className="primary"
+                onClick={goNextMistakeQuestion}
+                disabled={!mistakeSession.answers[currentMistakeQuestion.questionId]}
+              >
+                {t.nextQuestion}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="primary"
+                onClick={finishMistakeSession}
+                disabled={mistakeBusy}
+              >
+                {t.completed}
+              </button>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {!quizSession && !quizSummary && !mistakeSession && mistakeSummary ? (
+        <section className="card stack">
+          <h2>{t.mistakesWork}</h2>
+          <p>
+            {t.totalAnswered}: {mistakeSummary.answeredCount}/{mistakeSummary.totalQuestions}
+          </p>
+          <p>
+            {t.correct}: {mistakeSummary.correctCount}
+          </p>
+          <p>
+            Закрыто в этой сессии: {mistakeSummary.resolvedCount}
+          </p>
+          <button className="primary" type="button" onClick={() => setMistakeSummary(null)}>
+            {t.dashboard}
+          </button>
+        </section>
+      ) : null}
+
+      {!quizSession && !quizSummary && !mistakeSession && !mistakeSummary ? (
         <>
           <section className="card stack">
             <h2>{t.dashboard}</h2>
@@ -737,70 +926,18 @@ export function TrainerApp() {
           </section>
 
           <section className="card stack">
-            <div className="row-between">
-              <h2>{t.mistakesWork}</h2>
-              <button className="ghost" type="button" onClick={refreshMistakes}>
-                {t.refreshMistakes}
-              </button>
-            </div>
-
-            {mistakeQuestions.length === 0 ? (
-              <>
-                <p>{t.noMistakes}</p>
-                <button className="primary" type="button" onClick={refreshMistakes}>
-                  {t.startMistakeSession}
-                </button>
-              </>
-            ) : (
-              <>
-                <p>
-                  {t.question}: V{mistakeQuestions[0].variantId} #{mistakeQuestions[0].order}
-                </p>
-                <p className="question-text">{mistakeQuestions[0].text}</p>
-                <div className="stack">
-                  {mistakeQuestions[0].options.map((option) => {
-                    const selected = mistakeFeedback?.selectedOptionId === option.id;
-                    const correct = mistakeFeedback?.correctOptionLabel === option.label;
-                    const className = [
-                      "option",
-                      selected ? "selected" : "",
-                      mistakeFeedback && correct ? "correct" : "",
-                      mistakeFeedback && selected && !mistakeFeedback.isCorrect
-                        ? "incorrect"
-                        : ""
-                    ]
-                      .filter(Boolean)
-                      .join(" ");
-
-                    return (
-                      <button
-                        key={option.id}
-                        className={className}
-                        onClick={() => answerMistake(option.id)}
-                        type="button"
-                        disabled={mistakeBusy || Boolean(mistakeFeedback)}
-                      >
-                        <span>{option.label})</span>
-                        <span>{option.text}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {mistakeFeedback ? (
-                  <div className="stack">
-                    <p className={mistakeFeedback.isCorrect ? "ok-text" : "error-text"}>
-                      {mistakeFeedback.isCorrect
-                        ? `${t.correct}. ${t.streak}: ${mistakeFeedback.streak}/3`
-                        : `${t.incorrect}. ${t.correctAnswer}: ${mistakeFeedback.correctOptionLabel}`}
-                    </p>
-                    <button className="primary" type="button" onClick={nextMistakeQuestion}>
-                      {t.nextQuestion}
-                    </button>
-                  </div>
-                ) : null}
-              </>
-            )}
+            <h2>{t.mistakesWork}</h2>
+            <p>
+              {t.activeMistakes}: {me.stats.activeMistakes}
+            </p>
+            <button
+              className="primary"
+              type="button"
+              onClick={startMistakeSession}
+              disabled={mistakeBusy}
+            >
+              {t.startMistakeSession}
+            </button>
           </section>
 
           <section className="card stack">
