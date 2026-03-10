@@ -9,11 +9,11 @@ type SubjectKey = "java" | "arduino";
 const ARDUINO_ANSWER_KEYS: Record<number, string[]> = {
   1: [
     "E", "D", "E", "C", "C", "E", "D", "D", "A", "A", "A", "C", "C", "C", "B", "E", "A", "B", "C", "B",
-    "C", "B", "C", "A", "E", "D", "E", "D", "A", "A", "D", "C", "B", "A", "A", "E", "E", "D", "E", "E"
+    "E", "B", "C", "A", "E", "D", "E", "D", "A", "A", "D", "C", "B", "A", "A", "E", "E", "D", "E", "E"
   ],
   2: [
     "E", "C", "E", "C", "C", "D", "C", "B", "E", "A", "B", "B", "B", "D", "E", "D", "C", "A", "A", "B",
-    "A", "E", "A", "D", "E", "E", "A", "B", "D", "A", "B", "A", "C", "E", "A", "C", "A", "E", "E", "B"
+    "A", "E", "A", "D", "E", "E", "A", "B", "D", "A", "B", "A", "C", "E", "E", "C", "A", "E", "E", "B"
   ],
   3: [
     "A", "C", "C", "C", "B", "E", "A", "B", "C", "B", "E", "B", "C", "A", "E", "D", "E", "D", "A", "A",
@@ -28,8 +28,8 @@ const ARDUINO_ANSWER_KEYS: Record<number, string[]> = {
     "D", "C", "C", "D", "A", "E", "B", "C", "E", "D", "E", "C", "C", "E", "D", "D", "A", "A", "A", "C"
   ],
   6: [
-    "A", "B", "A", "D", "E", "E", "A", "B", "D", "A", "B", "A", "C", "E", "E", "C", "A", "E", "E", "B",
-    "E", "D", "C", "D", "B", "C", "B", "E", "E", "B", "E", "C", "C", "D", "C", "B", "E", "A", "B", "B"
+    "A", "E", "A", "D", "E", "E", "A", "B", "D", "A", "B", "A", "C", "E", "E", "C", "A", "E", "E", "B",
+    "E", "D", "C", "D", "B", "C", "B", "E", "E", "C", "E", "C", "C", "D", "C", "B", "E", "A", "B", "B"
   ],
   7: [
     "D", "C", "B", "A", "A", "E", "E", "D", "E", "E", "D", "C", "C", "D", "A", "E", "B", "C", "E", "D",
@@ -41,7 +41,7 @@ const ARDUINO_ANSWER_KEYS: Record<number, string[]> = {
   ],
   9: [
     "D", "C", "C", "D", "A", "E", "B", "C", "E", "D", "E", "C", "C", "E", "D", "D", "A", "A", "A", "C",
-    "C", "C", "B", "E", "A", "B", "C", "B", "E", "B", "C", "A", "E", "E", "E", "D", "A", "A", "D", "E"
+    "C", "C", "B", "E", "A", "B", "C", "B", "E", "B", "C", "A", "E", "D", "E", "D", "A", "A", "D", "C"
   ]
 };
 
@@ -108,6 +108,75 @@ function applyAnswerKeys(
       })
     };
   });
+}
+
+function normalizeQuestionForConsistencyCheck(questionText: string): string {
+  return questionText
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/^\d+[.)]\s*/, "")
+    .trim();
+}
+
+function normalizeOptionForConsistencyCheck(optionText: string): string {
+  return optionText.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function assertConsistentArduinoAnswers(variants: ParsedVariant[]): void {
+  const grouped = new Map<
+    string,
+    Array<{ variantNumber: number; order: number; questionText: string; correctText: string }>
+  >();
+
+  for (const variant of variants) {
+    for (const question of variant.questions) {
+      const key = normalizeQuestionForConsistencyCheck(question.text);
+      const correctOption = question.options.find((option) => option.isCorrect);
+
+      if (!correctOption) {
+        continue;
+      }
+
+      const entry = {
+        variantNumber: variant.variantNumber,
+        order: question.order,
+        questionText: question.text,
+        correctText: normalizeOptionForConsistencyCheck(correctOption.text)
+      };
+
+      if (!grouped.has(key)) {
+        grouped.set(key, [entry]);
+      } else {
+        grouped.get(key)!.push(entry);
+      }
+    }
+  }
+
+  const conflicts: string[] = [];
+
+  for (const entries of grouped.values()) {
+    if (entries.length < 2) {
+      continue;
+    }
+
+    const uniqueAnswers = [...new Set(entries.map((entry) => entry.correctText))];
+    if (uniqueAnswers.length < 2) {
+      continue;
+    }
+
+    const sample = entries
+      .map((entry) => `V${entry.variantNumber}Q${entry.order}: ${entry.correctText}`)
+      .join(", ");
+    conflicts.push(`${entries[0].questionText} -> ${sample}`);
+  }
+
+  if (conflicts.length > 0) {
+    throw new Error(
+      `Arduino answer consistency check failed (${conflicts.length} conflict(s)): ${conflicts.join(
+        " | "
+      )}`
+    );
+  }
 }
 
 async function importSubject(subjectKey: SubjectKey, variants: ParsedVariant[]) {
@@ -189,6 +258,7 @@ async function main() {
   const javaVariants = await parseDocxFile(javaDocxPath);
   const arduinoVariantsRaw = await parseDocxFile(arduinoDocxPath);
   const arduinoVariants = applyAnswerKeys(arduinoVariantsRaw, ARDUINO_ANSWER_KEYS);
+  assertConsistentArduinoAnswers(arduinoVariants);
 
   if (javaVariants.length === 0 || arduinoVariants.length === 0) {
     throw new Error("One of subjects has empty parsed variants");
