@@ -33,4 +33,30 @@ describe("parseDocumentXml", () => {
     expect(labels).toEqual(["C", "D", "D"]);
     expect(variants[0].questions[2].options).toHaveLength(4);
   });
+
+  it("does not treat GND) inside question text as option D marker", () => {
+    const xml = `
+<w:document>
+  <w:body>
+    <w:p><w:r><w:t>Нұсқа №2</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>3. Жер (GND) үшін қандай түсті сым әдетте қолданылады?A) ҚызылB) АқC) ЖасылD) Сары</w:t></w:r>
+      <w:r><w:rPr><w:b/></w:rPr><w:t>E) Қара немесе көк</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>`;
+
+    const variants = parseDocumentXml(xml);
+    expect(variants).toHaveLength(1);
+    expect(variants[0].questions).toHaveLength(1);
+    expect(variants[0].questions[0].text).toContain("GND) үшін қандай түсті сым");
+    expect(variants[0].questions[0].options.map((option) => option.text)).toEqual([
+      "Қызыл",
+      "Ақ",
+      "Жасыл",
+      "Сары",
+      "Қара немесе көк"
+    ]);
+    expect(getCorrectLabel(variants[0].questions[0].options)).toBe("E");
+  });
 });

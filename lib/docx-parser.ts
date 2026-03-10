@@ -46,6 +46,29 @@ type DraftQuestion = {
 const VARIANT_REGEX =
   /(?:Вариант|Нұсқа|Нуска)\s*:?[\s\u00a0]*(?:№|No\.?)?[\s\u00a0]*(\d+)/i;
 
+function extractOptionMarkers(text: string): RegExpMatchArray[] {
+  const allMarkers = [...text.matchAll(/([A-E])\)\s*/g)];
+  if (allMarkers.length === 0) {
+    return allMarkers;
+  }
+
+  const firstAIndex = allMarkers.findIndex((marker) => marker[1] === "A");
+  if (firstAIndex <= 0) {
+    return allMarkers;
+  }
+
+  const fromA = allMarkers.slice(firstAIndex);
+  const uniqueLabels = new Set(fromA.map((marker) => marker[1]));
+
+  // Handles cases like "GND) ... A) ... B) ... C) ... D) ... E)":
+  // discard noisy markers before the first real "A)" block.
+  if (uniqueLabels.size >= 4) {
+    return fromA;
+  }
+
+  return allMarkers;
+}
+
 function decodeXml(value: string): string {
   return value
     .replace(/&amp;/g, "&")
@@ -125,9 +148,14 @@ function hasBoldInRange(runs: Run[], start: number, end: number): boolean {
 
 function extractOptionChunks(paragraph: Paragraph): OptionChunk[] {
   const text = paragraph.text;
-  const markers = [...text.matchAll(/([A-E])\)\s*/g)];
+  const markers = extractOptionMarkers(text);
 
   if (markers.length === 0) {
+    return [];
+  }
+
+  const hasMarkerA = markers.some((marker) => marker[1] === "A");
+  if (!hasMarkerA && markers.length === 1 && text.includes("?")) {
     return [];
   }
 
@@ -245,8 +273,8 @@ export function parseDocumentXml(xml: string): ParsedVariant[] {
     }
 
     const optionChunks = extractOptionChunks(paragraph);
-    const firstMarkerMatch = paragraph.text.match(/([A-E])\)\s*/);
-    const markerStart = firstMarkerMatch?.index ?? -1;
+    const markers = extractOptionMarkers(paragraph.text);
+    const markerStart = markers[0]?.index ?? -1;
     const prefixText =
       markerStart >= 0
         ? normalizeText(paragraph.text.slice(0, markerStart))
