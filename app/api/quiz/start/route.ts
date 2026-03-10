@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser, unauthorized } from "@/lib/auth";
 import { badRequest, serverError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { dedupeQuestionsByFingerprint, selectUniqueQuestions } from "@/lib/quiz-selection";
+import { selectUniqueQuestions } from "@/lib/quiz-selection";
 import { quizStartSchema } from "@/lib/validators";
 
 const QUESTION_LIMIT = 40;
@@ -80,9 +80,7 @@ export async function POST(req: NextRequest) {
         take: QUESTION_LIMIT
       });
 
-      const uniqueRows = dedupeQuestionsByFingerprint(dbRows);
-
-      questions = uniqueRows.map((row) => ({
+      questions = dbRows.map((row) => ({
         id: row.id,
         text: row.text,
         order: row.order,
