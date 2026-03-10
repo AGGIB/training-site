@@ -6,6 +6,45 @@ import { ParsedVariant, parseDocxFile } from "../lib/docx-parser";
 
 type SubjectKey = "java" | "arduino";
 
+const JAVA_ANSWER_KEYS: Record<number, string[]> = {
+  1: [
+    "C", "C", "E", "E", "C", "B", "D", "B", "D", "B", "B", "C", "E", "E", "C", "E", "E", "A", "C", "A",
+    "C", "E", "C", "A", "A", "A", "C", "A", "E", "D", "C", "D", "C", "A", "D", "C", "B", "A", "D", "C"
+  ],
+  2: [
+    "B", "A", "A", "E", "D", "B", "C", "E", "B", "E", "C", "D", "B", "A", "E", "B", "D", "D", "C", "E",
+    "C", "B", "B", "C", "A", "B", "D", "B", "D", "C", "A", "B", "C", "C", "A", "D", "C", "E", "D", "B"
+  ],
+  3: [
+    "C", "A", "B", "B", "D", "D", "B", "B", "D", "C", "B", "D", "D", "E", "A", "E", "D", "A", "E", "C",
+    "E", "D", "A", "B", "A", "B", "C", "D", "A", "B", "C", "D", "A", "E", "B", "B", "B", "A", "C", "B"
+  ],
+  4: [
+    "E", "E", "D", "D", "E", "A", "D", "D", "E", "A", "C", "B", "A", "C", "B", "E", "A", "A", "D", "A",
+    "A", "B", "D", "E", "D", "A", "B", "B", "D", "C", "D", "E", "E", "C", "A", "D", "C", "E", "C", "A"
+  ],
+  5: [
+    "E", "B", "E", "A", "E", "A", "B", "A", "A", "C", "E", "A", "A", "B", "D", "D", "A", "D", "B", "C",
+    "C", "D", "D", "A", "B", "D", "A", "C", "E", "C", "B", "D", "A", "B", "A", "C", "B", "D", "C", "E"
+  ],
+  6: [
+    "A", "E", "D", "E", "B", "E", "D", "C", "C", "A", "C", "D", "D", "A", "C", "D", "A", "C", "A", "E",
+    "E", "D", "B", "E", "D", "C", "D", "E", "D", "E", "C", "A", "D", "D", "E", "E", "E", "B", "B", "D"
+  ],
+  7: [
+    "A", "B", "B", "D", "E", "B", "C", "C", "D", "D", "C", "C", "E", "E", "A", "B", "D", "C", "D", "D",
+    "D", "B", "A", "B", "C", "C", "E", "B", "A", "C", "E", "B", "E", "D", "E", "E", "D", "B", "A", "B"
+  ],
+  8: [
+    "B", "C", "C", "B", "C", "D", "E", "E", "A", "E", "E", "C", "B", "A", "A", "B", "E", "C", "C", "E",
+    "A", "C", "A", "D", "D", "A", "B", "C", "C", "A", "C", "E", "E", "C", "B", "B", "E", "C", "E", "B"
+  ],
+  9: [
+    "A", "C", "E", "D", "B", "D", "E", "B", "E", "A", "E", "D", "B", "B", "A", "B", "A", "D", "E", "A",
+    "E", "A", "B", "B", "B", "C", "A", "A", "E", "C", "D", "D", "C", "A", "A", "B", "C", "A", "B", "A"
+  ]
+};
+
 const ARDUINO_ANSWER_KEYS: Record<number, string[]> = {
   1: [
     "E", "D", "E", "C", "C", "E", "D", "D", "A", "A", "A", "C", "C", "C", "B", "E", "A", "B", "C", "B",
@@ -69,17 +108,18 @@ function variantIdFor(subject: Subject, variantNumber: number): number {
 
 function applyAnswerKeys(
   variants: ParsedVariant[],
-  answerKeys: Record<number, string[]>
+  answerKeys: Record<number, string[]>,
+  subjectName: string
 ): ParsedVariant[] {
   return variants.map((variant) => {
     const answers = answerKeys[variant.variantNumber];
     if (!answers) {
-      throw new Error(`Missing answer key for Arduino variant ${variant.variantNumber}`);
+      throw new Error(`Missing answer key for ${subjectName} variant ${variant.variantNumber}`);
     }
 
     if (answers.length !== variant.questions.length) {
       throw new Error(
-        `Answer key length mismatch for Arduino variant ${variant.variantNumber}: expected ${variant.questions.length}, got ${answers.length}`
+        `Answer key length mismatch for ${subjectName} variant ${variant.variantNumber}: expected ${variant.questions.length}, got ${answers.length}`
       );
     }
 
@@ -94,7 +134,7 @@ function applyAnswerKeys(
 
         if (!hasCorrect) {
           throw new Error(
-            `Arduino key mismatch at variant ${variant.variantNumber}, question ${question.order}. Correct label ${correctLabel} not found`
+            `${subjectName} key mismatch at variant ${variant.variantNumber}, question ${question.order}. Correct label ${correctLabel} not found`
           );
         }
 
@@ -255,9 +295,10 @@ async function main() {
     ? path.resolve(process.cwd(), process.env.SEED_DOCX_ARDUINO_PATH)
     : path.resolve(process.cwd(), "data/arduino.docx");
 
-  const javaVariants = await parseDocxFile(javaDocxPath);
+  const javaVariantsRaw = await parseDocxFile(javaDocxPath);
+  const javaVariants = applyAnswerKeys(javaVariantsRaw, JAVA_ANSWER_KEYS, "Java");
   const arduinoVariantsRaw = await parseDocxFile(arduinoDocxPath);
-  const arduinoVariants = applyAnswerKeys(arduinoVariantsRaw, ARDUINO_ANSWER_KEYS);
+  const arduinoVariants = applyAnswerKeys(arduinoVariantsRaw, ARDUINO_ANSWER_KEYS, "Arduino");
   assertConsistentArduinoAnswers(arduinoVariants);
 
   if (javaVariants.length === 0 || arduinoVariants.length === 0) {
