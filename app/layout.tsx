@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Java Exam Trainer",
+  title: "Exam Trainer",
   description: "RU/KZ exam trainer with statistics and mistake correction"
 };
 

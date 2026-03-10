@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser, unauthorized } from "@/lib/auth";
 import { badRequest, serverError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import { dedupeQuestionsByFingerprint, selectUniqueQuestions } from "@/lib/quiz-selection";
 import { quizStartSchema } from "@/lib/validators";
 
 const QUESTION_LIMIT = 40;
@@ -79,7 +80,9 @@ export async function POST(req: NextRequest) {
         take: QUESTION_LIMIT
       });
 
-      questions = dbRows.map((row) => ({
+      const uniqueRows = dedupeQuestionsByFingerprint(dbRows);
+
+      questions = uniqueRows.map((row) => ({
         id: row.id,
         text: row.text,
         order: row.order,
@@ -111,9 +114,7 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      questions = dbRows
-        .sort(() => Math.random() - 0.5)
-        .slice(0, QUESTION_LIMIT)
+      questions = selectUniqueQuestions(dbRows, QUESTION_LIMIT)
         .map((row) => ({
           id: row.id,
           text: row.text,

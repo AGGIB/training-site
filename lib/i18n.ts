@@ -40,7 +40,7 @@ type Dictionary = {
 
 export const dictionaries: Record<Lang, Dictionary> = {
   ru: {
-    appTitle: "Экзаменационный тренажёр Java",
+    appTitle: "Экзаменационный тренажёр",
     appSubtitle: "9 вариантов, статистика и работа над ошибками",
     login: "Вход",
     register: "Регистрация",
@@ -77,7 +77,7 @@ export const dictionaries: Record<Lang, Dictionary> = {
     history: "История попыток"
   },
   kz: {
-    appTitle: "Java емтихан тренажері",
+    appTitle: "Емтихан тренажері",
     appSubtitle: "9 нұсқа, статистика және қателермен жұмыс",
     login: "Кіру",
     register: "Тіркелу",
