@@ -43,7 +43,8 @@ type DraftQuestion = {
   options: Map<string, OptionChunk>;
 };
 
-const VARIANT_REGEX = /Вариант\s*:?[\s\u00a0]*№[\s\u00a0]*(\d+)/i;
+const VARIANT_REGEX =
+  /(?:Вариант|Нұсқа|Нуска)\s*:?[\s\u00a0]*(?:№|No\.?)?[\s\u00a0]*(\d+)/i;
 
 function decodeXml(value: string): string {
   return value

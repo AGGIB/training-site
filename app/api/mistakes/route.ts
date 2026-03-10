@@ -1,8 +1,13 @@
 export const dynamic = "force-dynamic";
+import { Subject } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser, unauthorized } from "@/lib/auth";
 import { serverError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+
+function toDbSubject(subject: string | null): Subject {
+  return subject === "arduino" ? Subject.ARDUINO : Subject.JAVA;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,10 +16,15 @@ export async function GET(req: NextRequest) {
       return unauthorized();
     }
 
+    const selectedSubject = toDbSubject(req.nextUrl.searchParams.get("subject"));
+
     const rows = await prisma.userQuestionProgress.findMany({
       where: {
         userId: user.id,
-        isActive: true
+        isActive: true,
+        question: {
+          subject: selectedSubject
+        }
       },
       orderBy: {
         updatedAt: "desc"
@@ -22,6 +32,11 @@ export async function GET(req: NextRequest) {
       include: {
         question: {
           include: {
+            variant: {
+              select: {
+                number: true
+              }
+            },
             options: {
               orderBy: {
                 order: "asc"
@@ -42,7 +57,7 @@ export async function GET(req: NextRequest) {
       questions: rows.map((row) => ({
         questionId: row.questionId,
         text: row.question.text,
-        variantId: row.question.variantId,
+        variantId: row.question.variant.number,
         order: row.question.order,
         streak: row.streak,
         timesWrong: row.timesWrong,

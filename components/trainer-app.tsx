@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Lang, dictionaries } from "@/lib/i18n";
 
+type SubjectKey = "java" | "arduino";
+
 type MePayload = {
   user: {
     id: string;
     username: string;
   };
+  subject: SubjectKey;
   stats: {
     totalAttempts: number;
     totalAnswered: number;
@@ -23,6 +26,7 @@ type MePayload = {
     recentAttempts: Array<{
       id: string;
       mode: "VARIANT" | "MIXED";
+      subject: SubjectKey;
       variantNumber: number | null;
       startedAt: string;
       finishedAt: string;
@@ -37,7 +41,7 @@ type QuizQuestion = {
   id: string;
   text: string;
   order: number;
-  variantId: number;
+  variantNumber: number;
   options: Array<{
     id: string;
     label: string;
@@ -49,6 +53,7 @@ type QuizQuestion = {
 type QuizAttempt = {
   id: string;
   mode: "VARIANT" | "MIXED";
+  subject: SubjectKey;
   variantNumber: number | null;
   totalQuestions: number;
   startedAt: string;
@@ -96,6 +101,7 @@ type MistakeQuestion = {
 };
 
 const LANG_STORAGE_KEY = "podgotovka_lang";
+const SUBJECT_STORAGE_KEY = "podgotovka_subject";
 
 type AuthMode = "login" | "register";
 
@@ -117,6 +123,7 @@ export function TrainerApp() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [selectedSubject, setSelectedSubject] = useState<SubjectKey>("java");
 
   const [quizMode, setQuizMode] = useState<"variant" | "mixed">("variant");
   const [variantNumber, setVariantNumber] = useState(1);
@@ -162,11 +169,20 @@ export function TrainerApp() {
     if (savedLang === "ru" || savedLang === "kz") {
       setLang(savedLang);
     }
+
+    const savedSubject = localStorage.getItem(SUBJECT_STORAGE_KEY);
+    if (savedSubject === "java" || savedSubject === "arduino") {
+      setSelectedSubject(savedSubject);
+    }
   }, []);
 
   useEffect(() => {
     localStorage.setItem(LANG_STORAGE_KEY, lang);
   }, [lang]);
+
+  useEffect(() => {
+    localStorage.setItem(SUBJECT_STORAGE_KEY, selectedSubject);
+  }, [selectedSubject]);
 
   useEffect(() => {
     if (!quizSession) {
@@ -184,13 +200,13 @@ export function TrainerApp() {
   }, [quizSession]);
 
   useEffect(() => {
-    void loadMe();
-  }, []);
+    void loadMe(selectedSubject);
+  }, [selectedSubject]);
 
-  async function loadMe() {
+  async function loadMe(subject: SubjectKey = selectedSubject) {
     setLoading(true);
     try {
-      const response = await fetch("/api/me");
+      const response = await fetch(`/api/me?subject=${subject}`);
       if (response.status === 401) {
         setMe(null);
         return;
@@ -235,7 +251,7 @@ export function TrainerApp() {
 
       setUsername("");
       setPassword("");
-      await loadMe();
+      await loadMe(selectedSubject);
     } catch (error) {
       console.error(error);
       setAuthError("Network error");
@@ -253,6 +269,14 @@ export function TrainerApp() {
     setMistakeSummary(null);
   }
 
+  function switchSubject(subject: SubjectKey) {
+    setSelectedSubject(subject);
+    setQuizSession(null);
+    setQuizSummary(null);
+    setMistakeSession(null);
+    setMistakeSummary(null);
+  }
+
   async function startQuiz() {
     setQuizBusy(true);
     setQuizSummary(null);
@@ -264,6 +288,7 @@ export function TrainerApp() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
+          subject: selectedSubject,
           mode: quizMode,
           variantNumber: quizMode === "variant" ? variantNumber : undefined
         })
@@ -400,7 +425,7 @@ export function TrainerApp() {
 
       setQuizSummary(payload);
       setQuizSession(null);
-      await loadMe();
+      await loadMe(selectedSubject);
     } catch (error) {
       console.error(error);
       alert((error as Error).message);
@@ -410,7 +435,7 @@ export function TrainerApp() {
   }
 
   async function loadMistakeQueue(): Promise<MistakeQuestion[]> {
-    const response = await fetch("/api/mistakes");
+    const response = await fetch(`/api/mistakes?subject=${selectedSubject}`);
     if (!response.ok) {
       throw new Error("Failed to load mistakes");
     }
@@ -541,7 +566,7 @@ export function TrainerApp() {
       resolvedCount
     });
     setMistakeSession(null);
-    await loadMe();
+    await loadMe(selectedSubject);
   }
 
   const quizAnsweredCount = quizSession
@@ -635,6 +660,22 @@ export function TrainerApp() {
           <p>
             {me.user.username} · {t.appSubtitle}
           </p>
+          <div className="auth-switch" style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              className={selectedSubject === "java" ? "tab active" : "tab"}
+              onClick={() => switchSubject("java")}
+            >
+              Java
+            </button>
+            <button
+              type="button"
+              className={selectedSubject === "arduino" ? "tab active" : "tab"}
+              onClick={() => switchSubject("arduino")}
+            >
+              Arduino
+            </button>
+          </div>
         </div>
         <div className="topbar-actions">
           <div className="lang-switch">

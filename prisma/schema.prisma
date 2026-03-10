@@ -12,6 +12,11 @@ enum AttemptMode {
   MIXED
 }
 
+enum Subject {
+  JAVA
+  ARDUINO
+}
+
 model User {
   id            String               @id @default(cuid())
   username      String               @unique
@@ -35,13 +40,19 @@ model Session {
 
 model Variant {
   id        Int        @id
+  subject   Subject    @default(JAVA)
+  number    Int
   title     String
   questions Question[]
+
+  @@unique([subject, number])
+  @@index([subject])
 }
 
 model Question {
   id            String               @id @default(cuid())
   variantId     Int
+  subject       Subject              @default(JAVA)
   order         Int
   text          String
   createdAt     DateTime             @default(now())
@@ -53,6 +64,7 @@ model Question {
 
   @@unique([variantId, order])
   @@index([variantId])
+  @@index([subject, variantId])
 }
 
 model Option {
@@ -74,6 +86,7 @@ model Attempt {
   id            String         @id @default(cuid())
   userId        String
   mode          AttemptMode
+  subject       Subject        @default(JAVA)
   variantNumber Int?
   startedAt     DateTime       @default(now())
   finishedAt    DateTime?

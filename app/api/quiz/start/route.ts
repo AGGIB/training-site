@@ -1,5 +1,5 @@
 export const dynamic = "force-dynamic";
-import { AttemptMode } from "@prisma/client";
+import { AttemptMode, Subject } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser, unauthorized } from "@/lib/auth";
 import { badRequest, serverError } from "@/lib/http";
@@ -7,6 +7,14 @@ import { prisma } from "@/lib/prisma";
 import { quizStartSchema } from "@/lib/validators";
 
 const QUESTION_LIMIT = 40;
+
+function toDbSubject(subject: "java" | "arduino"): Subject {
+  return subject === "java" ? Subject.JAVA : Subject.ARDUINO;
+}
+
+function fromDbSubject(subject: Subject): "java" | "arduino" {
+  return subject === Subject.JAVA ? "java" : "arduino";
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,12 +30,14 @@ export async function POST(req: NextRequest) {
       return badRequest("Invalid payload", parsed.error.flatten());
     }
 
+    const subject = toDbSubject(parsed.data.subject);
+
     let questions:
       | Array<{
           id: string;
           text: string;
           order: number;
-          variantId: number;
+          variantNumber: number;
           options: Array<{ id: string; label: string; text: string; order: number }>;
         }>
       | null = null;
@@ -39,9 +49,18 @@ export async function POST(req: NextRequest) {
 
       const dbRows = await prisma.question.findMany({
         where: {
-          variantId: parsed.data.variantNumber
+          subject,
+          variant: {
+            subject,
+            number: parsed.data.variantNumber
+          }
         },
         include: {
+          variant: {
+            select: {
+              number: true
+            }
+          },
           options: {
             select: {
               id: true,
@@ -60,27 +79,24 @@ export async function POST(req: NextRequest) {
         take: QUESTION_LIMIT
       });
 
-      questions = dbRows;
+      questions = dbRows.map((row) => ({
+        id: row.id,
+        text: row.text,
+        order: row.order,
+        variantNumber: row.variant.number,
+        options: row.options
+      }));
     } else {
-      const randomQuestionIds = await prisma.$queryRaw<Array<{ id: string }>>`
-        SELECT id
-        FROM "Question"
-        ORDER BY RANDOM()
-        LIMIT ${QUESTION_LIMIT}
-      `;
-
-      const idOrder = new Map<string, number>();
-      randomQuestionIds.forEach((row, index) => {
-        idOrder.set(row.id, index);
-      });
-
       const dbRows = await prisma.question.findMany({
         where: {
-          id: {
-            in: randomQuestionIds.map((row) => row.id)
-          }
+          subject
         },
         include: {
+          variant: {
+            select: {
+              number: true
+            }
+          },
           options: {
             select: {
               id: true,
@@ -95,9 +111,16 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      questions = dbRows.sort((left, right) => {
-        return (idOrder.get(left.id) ?? 0) - (idOrder.get(right.id) ?? 0);
-      });
+      questions = dbRows
+        .sort(() => Math.random() - 0.5)
+        .slice(0, QUESTION_LIMIT)
+        .map((row) => ({
+          id: row.id,
+          text: row.text,
+          order: row.order,
+          variantNumber: row.variant.number,
+          options: row.options
+        }));
     }
 
     if (!questions || questions.length === 0) {
@@ -108,6 +131,7 @@ export async function POST(req: NextRequest) {
       data: {
         userId: user.id,
         mode: parsed.data.mode === "variant" ? AttemptMode.VARIANT : AttemptMode.MIXED,
+        subject,
         variantNumber: parsed.data.mode === "variant" ? parsed.data.variantNumber : null,
         totalQuestions: questions.length,
         questions: {
@@ -125,6 +149,7 @@ export async function POST(req: NextRequest) {
       attempt: {
         id: attempt.id,
         mode: attempt.mode,
+        subject: fromDbSubject(attempt.subject),
         variantNumber: attempt.variantNumber,
         totalQuestions: attempt.totalQuestions,
         startedAt: attempt.startedAt

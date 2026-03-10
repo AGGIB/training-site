@@ -11,6 +11,7 @@ export const credentialsSchema = z.object({
 });
 
 export const quizStartSchema = z.object({
+  subject: z.enum(["java", "arduino"]).default("java"),
   mode: z.enum(["variant", "mixed"]),
   variantNumber: z.number().int().min(1).max(9).optional()
 });
