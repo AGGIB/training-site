@@ -59,4 +59,30 @@ describe("parseDocumentXml", () => {
     ]);
     expect(getCorrectLabel(variants[0].questions[0].options)).toBe("E");
   });
+
+  it("does not append answer-sheet block to the last option", () => {
+    const xml = `
+<w:document>
+  <w:body>
+    <w:p><w:r><w:t>Вариант: №9</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>Q40?A) finallyB) tryC) catchD) throw</w:t></w:r>
+      <w:r><w:rPr><w:b/></w:rPr><w:t>E) always</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>Лист ответа</w:t></w:r></w:p>
+    <w:p><w:r><w:t>№</w:t></w:r></w:p>
+    <w:p><w:r><w:t>I вариант</w:t></w:r></w:p>
+    <w:p><w:r><w:t>40</w:t></w:r></w:p>
+    <w:p><w:r><w:t>C B B A E D B B A</w:t></w:r></w:p>
+  </w:body>
+</w:document>`;
+
+    const variants = parseDocumentXml(xml);
+    expect(variants).toHaveLength(1);
+    expect(variants[0].questions).toHaveLength(1);
+    expect(variants[0].questions[0].options.find((option) => option.label === "E")?.text).toBe(
+      "always"
+    );
+    expect(getCorrectLabel(variants[0].questions[0].options)).toBe("E");
+  });
 });

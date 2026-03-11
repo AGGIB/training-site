@@ -196,6 +196,12 @@ function looksLikeQuestionText(text: string): boolean {
   return text.includes("?");
 }
 
+function looksLikeAnswerSheetStart(text: string): boolean {
+  return /(?:лист\s+ответа|лист\s+ответов|лист\s+жауап|жауап\s+парағы|answer\s*sheet)/i.test(
+    text
+  );
+}
+
 function finalizeDraft(
   draft: DraftQuestion | null,
   variants: Map<number, ParsedVariant>
@@ -244,6 +250,7 @@ export function parseDocumentXml(xml: string): ParsedVariant[] {
 
   let activeVariant: number | null = null;
   let draft: DraftQuestion | null = null;
+  let skipNoiseBlock = false;
 
   for (const paragraph of paragraphs) {
     const paragraphText = normalizeText(paragraph.text);
@@ -256,6 +263,7 @@ export function parseDocumentXml(xml: string): ParsedVariant[] {
       finalizeDraft(draft, variants);
       draft = null;
       activeVariant = Number(heading[1]);
+      skipNoiseBlock = false;
 
       if (!variants.has(activeVariant)) {
         variants.set(activeVariant, {
@@ -269,6 +277,17 @@ export function parseDocumentXml(xml: string): ParsedVariant[] {
     }
 
     if (!activeVariant) {
+      continue;
+    }
+
+    if (looksLikeAnswerSheetStart(paragraphText)) {
+      finalizeDraft(draft, variants);
+      draft = null;
+      skipNoiseBlock = true;
+      continue;
+    }
+
+    if (skipNoiseBlock) {
       continue;
     }
 
