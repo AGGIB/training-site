@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser, unauthorized } from "@/lib/auth";
 import { badRequest, serverError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { selectUniqueQuestions } from "@/lib/quiz-selection";
+import { selectUniqueQuestions, shuffleQuestions } from "@/lib/quiz-selection";
 import { quizStartSchema } from "@/lib/validators";
 
 const QUESTION_LIMIT = 40;
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
           text: row.text,
           order: row.order,
           variantNumber: row.variant.number,
-          options: row.options
+          options: shuffleQuestions(row.options)
         }));
     }
 
